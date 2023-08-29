@@ -1,99 +1,106 @@
 import {
   OpenAIStream,
   StreamingTextResponse,
-  experimental_StreamData
-} from 'ai'
-import OpenAI from 'openai'
-import { CompletionCreateParams } from 'openai/resources/chat'
+  experimental_StreamData,
+} from "ai";
+import OpenAI from "openai";
+import { CompletionCreateParams } from "openai/resources/chat";
 // Create an OpenAI API client (that's edge friendly!)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || ''
-})
+  apiKey: process.env.OPENAI_API_KEY || "",
+});
 
 // IMPORTANT! Set the runtime to edge
-export const runtime = 'edge'
+export const runtime = "edge";
 
 const functions: CompletionCreateParams.Function[] = [
   {
-    name: 'get_current_weather',
-    description: 'Get the current weather.',
+    name: "get_current_weather",
+    description: "Get the current weather.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         format: {
-          type: 'string',
-          enum: ['celsius', 'fahrenheit'],
-          description: 'The temperature unit to use.'
-        }
+          type: "string",
+          enum: ["celsius", "fahrenheit"],
+          description: "The temperature unit to use.",
+        },
       },
-      required: ['format']
-    }
+      required: ["format"],
+    },
   },
   {
-    name: 'eval_code_in_browser',
-    description: 'Execute javascript code in the browser with eval().',
+    name: "get_current_time",
+    description: "Get the current time",
     parameters: {
-      type: 'object',
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "call_number",
+    description: "Call a number",
+    parameters: {
+      type: "object",
       properties: {
-        code: {
-          type: 'string',
-          description: `Javascript code that will be directly executed via eval(). Do not use backticks in your response.
-           DO NOT include any newlines in your response, and be sure to provide only valid JSON when providing the arguments object.
-           The output of the eval() will be returned directly by the function.`
-        }
+        number: {
+          type: "string",
+          description: "The number to call",
+        },
       },
-      required: ['code']
-    }
-  }
-]
+      required: ["number"],
+    },
+  },
+];
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  const { messages } = await req.json();
 
   const response = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo-0613',
+    model: "gpt-3.5-turbo-0613",
     stream: true,
     messages,
-    functions
-  })
+    functions,
+  });
 
-  const data = new experimental_StreamData()
+  const data = new experimental_StreamData();
   const stream = OpenAIStream(response, {
     experimental_onFunctionCall: async (
       { name, arguments: args },
       createFunctionCallMessages
     ) => {
-      if (name === 'get_current_weather') {
+      if (name === "get_current_weather") {
         // Call a weather API here
         const weatherData = {
           temperature: 20,
-          unit: args.format === 'celsius' ? 'C' : 'F'
-        }
+          unit: args.format === "celsius" ? "C" : "F",
+        };
 
         data.append({
-          text: 'Some custom data'
-        })
+          text: "Some custom data",
+        });
 
-        const newMessages = createFunctionCallMessages(weatherData)
+        const newMessages = createFunctionCallMessages(weatherData);
         return openai.chat.completions.create({
           messages: [...messages, ...newMessages],
           stream: true,
-          model: 'gpt-3.5-turbo-0613'
-        })
+          model: "gpt-3.5-turbo-0613",
+        });
       }
     },
     onCompletion(completion) {
-      console.log('completion', completion)
+      console.log("completion", completion);
     },
     onFinal(completion) {
-      data.close()
+      data.close();
     },
-    experimental_streamData: true
-  })
+    experimental_streamData: true,
+  });
 
   data.append({
-    text: 'Hello, how are you?'
-  })
+    text: "Hello, how are you?",
+  });
 
-  return new StreamingTextResponse(stream, {}, data)
+  return new StreamingTextResponse(stream, {}, data);
 }
